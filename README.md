@@ -62,6 +62,30 @@ OpenAI-compatible inference server hosting the local offline LLM (Phi-4-mini-ins
 ### 7. Prometheus & Grafana Monitoring
 Prometheus scrapes operational metrics (like latency, count, and status codes) internally from the containerized services. Grafana visualizes these metrics on dashboards tracking pipeline performance and resource utilization.
 
+## vLLM Server Usage
+
+The vLLM server runs inside a Docker container using NVIDIA GPU acceleration. It exposes an OpenAI-compatible endpoint at `http://localhost:8000/v1`.
+
+### 1. Preparation of Model Weights
+Prior to starting the container, verify that you have downloaded the weights for `Phi-4-mini-instruct` and placed them in the `LLMModels/Phi-4-mini-instruct` directory at the project root. This ensures offline model execution is fully isolated and does not hit the internet.
+
+### 2. Querying vLLM Directly
+Once the container stack is active, you can check vLLM health or query it directly using standard HTTP requests:
+- **List Available Models**:
+  ```bash
+  curl http://localhost:8000/v1/models
+  ```
+- **Direct Completion Test**:
+  ```bash
+  curl http://localhost:8000/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "/models/Phi-4-mini-instruct",
+      "messages": [{"role": "user", "content": "Explain what RAG is in one sentence."}],
+      "temperature": 0.1
+    }'
+  ```
+
 ## Running Tests
 
 Automated tests are structured under `backend/tests/` and can be run using the runner scripts.

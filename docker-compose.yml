@@ -6,39 +6,75 @@ services:
     image: qdrant/qdrant:latest
     container_name: qdrant-db
     ports:
-      - "127.0.0.1:6334:6334" # Keep gRPC bound to localhost only
+      - "127.0.0.1:6334:6334" # Keep gRPC bound to localhost only by default
+      # Uncomment the block below to expose Qdrant ports directly to the LAN:
+      # - "6333:6333"
+      # - "6334:6334"
     volumes:
       - qdrant_data:/qdrant/storage
     restart: always
     environment:
       - QDRANT__TELEMETRY_DISABLED=true
 
-  # 2. Prometheus (Scrapes metrics internally)
+  # 2. vLLM OpenAI-Compatible Inference Server (NVIDIA GPU accelerated)
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: vllm-server
+    ports:
+      - "127.0.0.1:8000:8000" # Localhost only by default
+      # Uncomment the block below to expose vLLM directly to the LAN:
+      # - "8000:8000"
+    volumes:
+      - ./LLMModels:/models
+    environment:
+      - HF_HUB_OFFLINE=1
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command: >
+      --model /models/Phi-4-mini-instruct
+      --port 8000
+      --max-model-len 4096
+      --gpu-memory-utilization 0.90
+    restart: always
+
+  # 3. Prometheus (Scrapes metrics internally)
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus-server
     ports:
-      - "127.0.0.1:9090:9090" # Localhost only
+      - "127.0.0.1:9090:9090" # Localhost only by default
+      # Uncomment the block below to expose Prometheus directly to the LAN:
+      # - "9090:9090"
     volumes:
       - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: always
 
-  # 3. Grafana (Visual Dashboard for metrics - proxied via Nginx)
+  # 4. Grafana (Visual Dashboard for metrics - proxied via Nginx)
   grafana:
     image: grafana/grafana:latest
     container_name: grafana-server
+    # Uncomment the block below to expose Grafana directly to the LAN:
+    # ports:
+    #   - "3000:3000"
     restart: always
 
-  # 4. FastAPI Backend (Internal, proxied via Nginx)
+  # 5. FastAPI Backend (Internal, proxied via Nginx)
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: fastapi-backend
     ports:
-      - "127.0.0.1:5000:5000" # Localhost only
+      - "127.0.0.1:5000:5000" # Localhost only by default
+      # Uncomment the block below to expose the Backend directly to the LAN:
+      # - "5000:5000"
     volumes:
       - ./EmbeddingModels:/EmbeddingModels
       - ./LLMModels:/models
@@ -48,15 +84,16 @@ services:
       - PORT=5000
       - QDRANT_URL=http://qdrant:6333
       - QDRANT_GRPC_URL=qdrant:6334
-      - VLLM_URL=http://vllm-server:8000/v1
+      - VLLM_URL=http://vllm:8000/v1
       - MODEL_NAME=microsoft_Phi-4-mini-instruct-Q6_K_L.gguf
       - EMBEDDING_CACHE_DIR=/EmbeddingModels
       - QDRANT_COLLECTION_NAME=tech_support_kb
     depends_on:
       - qdrant
+      - vllm
     restart: always
 
-  # 5. Nginx (Single gateway exposed to LAN)
+  # 6. Nginx (Single gateway exposed to LAN)
   nginx:
     image: nginx:latest
     container_name: nginx-proxy
