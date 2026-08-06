@@ -121,7 +121,31 @@ class QdrantService:
             doc.metadata["base_score"] = float(score)
             results.append(doc)
             
-        return results
+        # Multi-version resolution: Filter out older document versions
+        max_versions = {}
+        for doc in results:
+            doc_id = doc.metadata.get("document_id")
+            ver = doc.metadata.get("document_version")
+            if doc_id and ver is not None:
+                try:
+                    max_versions[doc_id] = max(max_versions.get(doc_id, 0), int(ver))
+                except (ValueError, TypeError):
+                    pass
+
+        filtered_results = []
+        for doc in results:
+            doc_id = doc.metadata.get("document_id")
+            ver = doc.metadata.get("document_version")
+            if doc_id and ver is not None:
+                try:
+                    if int(ver) == max_versions[doc_id]:
+                        filtered_results.append(doc)
+                except (ValueError, TypeError):
+                    filtered_results.append(doc)
+            else:
+                filtered_results.append(doc)
+                
+        return filtered_results
 
     def rerank(self, query: str, documents: List[Document], top_n: int = 4) -> List[Document]:
         """
@@ -202,6 +226,84 @@ class QdrantService:
             return True
         except Exception as e:
             logger.error(f"Failed to delete file {filename} from Qdrant: {e}")
+            return False
+
+    def get_max_document_version(self, document_id: str, collection_name: str = None) -> int:
+        """Scrolls Qdrant to find the highest document_version stored for this document_id."""
+        col = collection_name or self.collection_name
+        try:
+            records, _ = self.client.scroll(
+                collection_name=col,
+                scroll_filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="metadata.document_id",
+                            match=MatchValue(value=document_id)
+                        )
+                    ]
+                ),
+                limit=1,
+                with_payload=True,
+                with_vectors=False
+            )
+            if records and records[0].payload:
+                metadata = records[0].payload.get("metadata", {})
+                ver = metadata.get("document_version")
+                if ver is not None:
+                    return int(ver)
+            return 0
+        except Exception as e:
+            logger.error(f"Error fetching max version for document {document_id}: {e}")
+            return 0
+
+    def verify_version_exists(self, document_id: str, version: int, collection_name: str = None) -> bool:
+        """Verifies that at least one point exists in Qdrant with this document_id and version."""
+        col = collection_name or self.collection_name
+        try:
+            records, _ = self.client.scroll(
+                collection_name=col,
+                scroll_filter=Filter(
+                    must=[
+                        FieldCondition(key="metadata.document_id", match=MatchValue(value=document_id)),
+                        FieldCondition(key="metadata.document_version", match=MatchValue(value=version))
+                    ]
+                ),
+                limit=1,
+                with_payload=False,
+                with_vectors=False
+            )
+            return len(records) > 0
+        except Exception as e:
+            logger.error(f"Verification failed for {document_id} version {version}: {e}")
+            return False
+
+    def delete_previous_versions(self, document_id: str, current_version: int, collection_name: str = None) -> bool:
+        """Deletes all points for document_id where document_version is not equal to current_version."""
+        col = collection_name or self.collection_name
+        logger.info(f"Cleaning up previous versions for document_id '{document_id}' (keeping version: {current_version})")
+        try:
+            filter_query = Filter(
+                must=[
+                    FieldCondition(
+                        key="metadata.document_id",
+                        match=MatchValue(value=document_id)
+                    )
+                ],
+                must_not=[
+                    FieldCondition(
+                        key="metadata.document_version",
+                        match=MatchValue(value=current_version)
+                    )
+                ]
+            )
+            result = self.client.delete(
+                collection_name=col,
+                points_selector=filter_query
+            )
+            logger.info(f"Deleted old version points for '{document_id}'. Result: {result}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete old versions for '{document_id}': {e}")
             return False
 
 

@@ -31,6 +31,14 @@ class Settings:
     # Local storage for temp uploads
     UPLOAD_DIR: Path = Path(__file__).resolve().parent.parent / "temp_uploads"
 
+    # Ingestion queue & Scheduled ingestion configuration
+    DOCUMENT_SOURCE_DIR: Path = Path(os.getenv("DOCUMENT_SOURCE_DIR", "c:/Projects/hoboQRAG/knowledge_base"))
+    INGESTION_SCHEDULE: str = os.getenv("INGESTION_SCHEDULE", "00:00")
+    INGESTION_GPU_MAINTENANCE: str = os.getenv("INGESTION_GPU_MAINTENANCE", "true").lower()
+    VLLM_CONTAINER_NAME: str = os.getenv("VLLM_CONTAINER_NAME", "vllm-server")
+    QUEUE_DB_PATH: Path = Path(__file__).resolve().parent.parent / "data" / "queue.db"
+    QUEUE_FILES_DIR: Path = Path(__file__).resolve().parent.parent / "data" / "queue_files"
+
     # Tech Support System Instructions
     SYSTEM_INSTRUCTION: str = (
         "You are an expert internal technical support AI assistant. Your goal is to help support agents "
@@ -47,5 +55,8 @@ class Settings:
 
 settings = Settings()
 
-# Ensure temp upload directory exists
+# Ensure directories exist
 settings.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+settings.DOCUMENT_SOURCE_DIR.mkdir(parents=True, exist_ok=True)
+settings.QUEUE_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+settings.QUEUE_FILES_DIR.mkdir(parents=True, exist_ok=True)

@@ -11,6 +11,15 @@ graph TD
     Client[WPF Client / HTTP Client] -->|Port 80| Nginx[Nginx Reverse Proxy]
     Nginx -->|Proxy Port 5000| FastAPI[FastAPI Backend]
     
+    subgraph Document Update Queue
+        UI[Tech Support UI / Dashboard] -->|Queue Changes| SQLite[(SQLite Queue DB)]
+        SQLite -->|Midnight Run| Worker[Ingestion Worker]
+    end
+    
+    FastAPI -->|Serves| UI
+    Worker -->|Chunk & Embed| Embeddings
+    Worker -->|Modify Collection| Qdrant
+    
     subgraph Local Models inside FastAPI
         Embeddings[Local Embeddings: BGE / Splade]
         Reranker[Local Reranker: ms-marco]
@@ -85,6 +94,48 @@ Once the container stack is active, you can check vLLM health or query it direct
       "temperature": 0.1
     }'
   ```
+
+## Document Update Queue and Scheduled Ingestion
+
+To support technical support workflows, the application implements a deployment queue system for the RAG knowledge base. Operations (ADD, REPLACE, DELETE) prepared during the day are enqueued and run within a controlled midnight maintenance window.
+
+### Ingestion Queue Workflow
+1. **Prepare Changes**: Support agents queue document additions, deletions, or replacements via the API or Web Dashboard.
+2. **Pending Queue**: Operations are saved in a persistent local SQLite database (`backend/data/queue.db`), and uploaded files are cached in `backend/data/queue_files/`.
+3. **Midnight Worker**: A background scheduler triggers at midnight to process the queue.
+4. **Qdrant Indexing**: Chunks are embedded and inserted with a stable `document_id` and an incremented `document_version`.
+5. **Pruning**: Previous versions are only purged once the new version is verified to exist in Qdrant. If indexing fails, the old version remains active.
+
+### Concurrency and GPU Maintenance Mode
+When `INGESTION_GPU_MAINTENANCE` is enabled:
+- **Chat Gating**: The backend blocks incoming chat queries and allows active queries to complete.
+- **VRAM Reclaim**: The vLLM server container is stopped to free GPU VRAM for the embedding/reranking processes.
+- **Queue Execution**: The worker processes queued operations.
+- **Service Recovery**: The vLLM server is restarted, the health of its model routes is polled, and chat routing is resumed.
+
+### API Endpoints
+- **GET /**: Serves the minimalist web dashboard for queue management.
+- **GET /api/ingestion/queue**: Lists all pending changes.
+- **POST /api/ingestion/queue**: Enqueues an operation (multipart upload for ADD/REPLACE).
+- **DELETE /api/ingestion/queue/{operation_id}**: Cancels a pending operation and removes associated files.
+- **POST /api/ingestion/process**: Triggers the ingestion queue immediately.
+- **GET /api/ingestion/status**: Returns active processing state, progress counters, lock state, and schedule time.
+- **GET /api/ingestion/history**: Lists execution logs of past ingestion runs.
+
+### Queue Configuration
+Modify environment variables in the `.env` file:
+- `INGESTION_SCHEDULE`: Time to run the scheduled sync (e.g. `00:00` for midnight).
+- `INGESTION_GPU_MAINTENANCE`: Set to `true` to stop vLLM and reclaim VRAM during ingestion, or `false` to share the GPU.
+
+### Prometheus Metrics
+Exposed metrics under `/metrics` include:
+- `ingestion_operations_total`: Total operations run (labeled by operation, collection, status).
+- `ingestion_operations_success_total`: Successful operations count.
+- `ingestion_operations_failed_total`: Failed operations count.
+- `ingestion_documents_added_total`, `ingestion_documents_replaced_total`, `ingestion_documents_deleted_total`: Counts by type.
+- `ingestion_chunks_created_total`: Total text chunks generated.
+- `ingestion_duration_seconds`: Time taken for the last sync run.
+- `ingestion_queue_size`: Size of the pending operations queue.
 
 ## Running Tests
 

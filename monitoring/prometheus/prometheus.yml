@@ -20,3 +20,8 @@ scrape_configs:
     metrics_path: '/metrics'
     static_configs:
       - targets: ['qdrant-db:6333']
+
+  # 4. Optional: Scraping NVIDIA GPU Exporter (e.g., nvidia-gpu-exporter or dcgm-exporter)
+  # - job_name: 'gpu-exporter'
+  #   static_configs:
+  #     - targets: ['host.docker.internal:9835']
