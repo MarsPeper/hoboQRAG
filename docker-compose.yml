@@ -1,20 +1,19 @@
 version: '3.8'
 
 services:
-  # 1. Qdrant Standalone Vector Database (Bound to localhost only)
+  # 1. Qdrant Standalone Vector Database (HTTP proxied via Nginx)
   qdrant:
     image: qdrant/qdrant:latest
     container_name: qdrant-db
     ports:
-      - "127.0.0.1:6333:6333" # HTTP REST API & Web Dashboard (localhost only)
-      - "127.0.0.1:6334:6334" # gRPC Binary protocol (localhost only)
+      - "127.0.0.1:6334:6334" # Keep gRPC bound to localhost only
     volumes:
       - qdrant_data:/qdrant/storage
     restart: always
     environment:
       - QDRANT__TELEMETRY_DISABLED=true
 
-  # 2. Prometheus (Scrapes metrics internally from backend and Qdrant)
+  # 2. Prometheus (Scrapes metrics internally)
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus-server
@@ -26,15 +25,13 @@ services:
       - "host.docker.internal:host-gateway"
     restart: always
 
-  # 3. Grafana (Visual Dashboard for metrics)
+  # 3. Grafana (Visual Dashboard for metrics - proxied via Nginx)
   grafana:
     image: grafana/grafana:latest
     container_name: grafana-server
-    ports:
-      - "127.0.0.1:3000:3000" # Localhost only
     restart: always
 
-  # 4. FastAPI Backend (Internal, only accessible through Nginx or localhost)
+  # 4. FastAPI Backend (Internal, proxied via Nginx)
   backend:
     build:
       context: ./backend
@@ -44,7 +41,7 @@ services:
       - "127.0.0.1:5000:5000" # Localhost only
     volumes:
       - ./EmbeddingModels:/EmbeddingModels
-      - ./LLMModels:/models # Match original LLMModels mounting
+      - ./LLMModels:/models
       - ./backend/temp_uploads:/app/temp_uploads
     environment:
       - HOST=0.0.0.0
@@ -59,16 +56,20 @@ services:
       - qdrant
     restart: always
 
-  # 5. Nginx (Only LAN exposed entrypoint)
+  # 5. Nginx (Single gateway exposed to LAN)
   nginx:
     image: nginx:latest
     container_name: nginx-proxy
     ports:
-      - "80:80" # Exposed to LAN
+      - "80:80" # Exposed to LAN (API & Main Web Gateway)
+      - "6333:6333" # Exposed to LAN (Qdrant Web UI & API)
+      - "3000:3000" # Exposed to LAN (Grafana UI Dashboard)
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - backend
+      - qdrant
+      - grafana
     restart: always
 
 volumes:

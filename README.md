@@ -35,7 +35,12 @@ graph TD
 ## Component Explanations
 
 ### 1. Nginx Reverse Proxy
-Acts as the single gateway exposed to the Local Area Network (LAN) on port 80. It handles routing and reverse proxies requests to the FastAPI backend while blocking direct LAN access to other components (Qdrant, Prometheus, Grafana, and vLLM) for security.
+Acts as the single gateway exposed to the Local Area Network (LAN). It publishes three ports to proxy incoming requests internally:
+* Port 80: Reverse proxies HTTP calls to the FastAPI backend.
+* Port 6333: Reverse proxies calls to the Qdrant Web UI Dashboard and HTTP REST API.
+* Port 3000: Reverse proxies calls to the Grafana metrics visualization interface.
+
+By routing all traffic through Nginx, direct LAN exposure is restricted for the underlying applications.
 
 ### 2. FastAPI Backend
 The core application server that exposes REST API endpoints for collection management, document uploads, and similarity chats. It orchestrates the RAG pipeline stages, handles file text extraction and chunk splitting, and tracks Prometheus instrumentation metrics.
