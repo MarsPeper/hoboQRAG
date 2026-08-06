@@ -1,0 +1,34 @@
+# Python virtual environments
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Pytest and coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+mock_cache/
+
+# Local model weights (large files)
+EmbeddingModels/
+LLMModels/
+llamacpp/models/
+
+# Environmental configurations
+.env
+.env.test
+backend/.env
+backend/.env.test
+
+# Temp folders and user uploads
+backend/temp_uploads/*
+!backend/temp_uploads/.gitkeep
+scratch/
+
+# Operating system files
+.DS_Store
+Thumbs.db

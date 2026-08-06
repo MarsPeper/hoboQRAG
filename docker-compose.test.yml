@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  # Dedicated test Qdrant instance running on separate ports to avoid touching production data
+  qdrant-test:
+    image: qdrant/qdrant:latest
+    container_name: qdrant-db-test
+    ports:
+      - "127.0.0.1:6343:6333" # HTTP REST API & Web Dashboard
+      - "127.0.0.1:6344:6334" # gRPC Binary protocol
+    restart: always
+    environment:
+      - QDRANT__TELEMETRY_DISABLED=true

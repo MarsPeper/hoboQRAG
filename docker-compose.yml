@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  # 1. Qdrant Standalone Vector Database (Bound to localhost only)
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant-db
+    ports:
+      - "127.0.0.1:6333:6333" # HTTP REST API & Web Dashboard (localhost only)
+      - "127.0.0.1:6334:6334" # gRPC Binary protocol (localhost only)
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: always
+    environment:
+      - QDRANT__TELEMETRY_DISABLED=true
+
+  # 2. Prometheus (Scrapes metrics internally from backend and Qdrant)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus-server
+    ports:
+      - "127.0.0.1:9090:9090" # Localhost only
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: always
+
+  # 3. Grafana (Visual Dashboard for metrics)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana-server
+    ports:
+      - "127.0.0.1:3000:3000" # Localhost only
+    restart: always
+
+  # 4. FastAPI Backend (Internal, only accessible through Nginx or localhost)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fastapi-backend
+    ports:
+      - "127.0.0.1:5000:5000" # Localhost only
+    volumes:
+      - ./EmbeddingModels:/EmbeddingModels
+      - ./LLMModels:/models # Match original LLMModels mounting
+      - ./backend/temp_uploads:/app/temp_uploads
+    environment:
+      - HOST=0.0.0.0
+      - PORT=5000
+      - QDRANT_URL=http://qdrant:6333
+      - QDRANT_GRPC_URL=qdrant:6334
+      - VLLM_URL=http://vllm-server:8000/v1
+      - MODEL_NAME=microsoft_Phi-4-mini-instruct-Q6_K_L.gguf
+      - EMBEDDING_CACHE_DIR=/EmbeddingModels
+      - QDRANT_COLLECTION_NAME=tech_support_kb
+    depends_on:
+      - qdrant
+    restart: always
+
+  # 5. Nginx (Only LAN exposed entrypoint)
+  nginx:
+    image: nginx:latest
+    container_name: nginx-proxy
+    ports:
+      - "80:80" # Exposed to LAN
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+    restart: always
+
+volumes:
+  qdrant_data:
